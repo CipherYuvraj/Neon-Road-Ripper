@@ -9,7 +9,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatbotMessages = document.getElementById('chatbot-messages');
   
   // Weather API key - OpenWeatherMap (Free tier)
-  const WEATHER_API_KEY = '5fa27f5ad98ea9590d1bf51dad39c241';
+  const WEATHER_API_KEY = '03e28cb2274d124535328b83b4f64ff4';
+  
+  // Groq API key for attractions recommendations - Make available globally
+  const GROQ_API_KEY = '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';
+  window.GROQ_API_KEY = GROQ_API_KEY; // Make available to other scripts
   
   // Toggle chatbot panel visibility
   chatbotButton.addEventListener('click', () => {
@@ -52,6 +56,16 @@ document.addEventListener('DOMContentLoaded', function() {
     messageElement.classList.add('chatbot-message');
     messageElement.classList.add(sender + '-message');
     messageElement.textContent = text;
+    chatbotMessages.appendChild(messageElement);
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+  }
+  
+  // Add a message with HTML to the chat
+  function addHTMLMessage(html, sender) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('chatbot-message');
+    messageElement.classList.add(sender + '-message');
+    messageElement.innerHTML = html;
     chatbotMessages.appendChild(messageElement);
     chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
   }
@@ -106,12 +120,13 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       // If no location found but we have a route, use the destination
-      if (!location && window.currentRoute) {
-        location = window.currentEndAddress || '';
+      if (!location && window.currentEndAddress) {
+        location = window.currentEndAddress.split(',')[0]; // Use just the city name
       }
       
       // If we have a location, fetch weather
       if (location) {
+        console.log("Fetching weather for:", location);
         fetchWeather(location);
       } else {
         // Ask for a location
@@ -139,24 +154,38 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
-    // Check for attraction queries
+    // Check for attraction queries - use Groq API
     if (
       lowerMessage.includes('attraction') || 
       lowerMessage.includes('see') || 
       lowerMessage.includes('visit') || 
       lowerMessage.includes('place') ||
-      lowerMessage.includes('tourist')
+      lowerMessage.includes('tourist') ||
+      lowerMessage.includes('things to do')
     ) {
-      hideTypingIndicator();
-      if (window.attractionsList && window.attractionsList.length > 0) {
-        let response = "Here are some attractions along your route:\n";
+      if (window.currentStartAddress && window.currentEndAddress) {
+        const startCity = window.currentStartAddress.split(',')[0];
+        const endCity = window.currentEndAddress.split(',')[0];
+        fetchRouteAttractionsWithGroq(startCity, endCity, message);
+      } else if (window.attractionsList && window.attractionsList.length > 0) {
         const attractions = window.attractionsList.slice(0, 3);
+        let attractionsHTML = `<div>Here are some attractions along your route:</div>
+                             <div class="attractions-list">`;
+        
         attractions.forEach((attraction, i) => {
-          response += `${i+1}. ${attraction.name}\n`;
+          attractionsHTML += `<div class="attraction-item">
+                            <span class="attraction-number">${i+1}.</span> 
+                            <span class="attraction-name">${attraction.name}</span>
+                          </div>`;
         });
-        response += "\nYou can see them on the map by making sure the Attractions toggle is enabled.";
-        addMessage(response, 'bot');
+        
+        attractionsHTML += `</div>
+                         <div class="attraction-tip">You can see them on the map by making sure the Attractions toggle is enabled.</div>`;
+        
+        hideTypingIndicator();
+        addHTMLMessage(attractionsHTML, 'bot');
       } else {
+        hideTypingIndicator();
         addMessage("I don't see any attractions loaded. Please plan a route first, and I'll find attractions along the way.", 'bot');
       }
       return;
@@ -172,16 +201,36 @@ document.addEventListener('DOMContentLoaded', function() {
     ) {
       hideTypingIndicator();
       if (window.gasStationsList && window.gasStationsList.length > 0) {
-        let response = "Here are some gas stations along your route:\n";
         const stations = window.gasStationsList.slice(0, 3);
+        let stationsHTML = `<div>Here are some gas stations along your route:</div>
+                          <div class="stations-list">`;
+        
         stations.forEach((station, i) => {
-          response += `${i+1}. ${station.name}\n`;
+          stationsHTML += `<div class="station-item">
+                         <span class="station-number">${i+1}.</span> 
+                         <span class="station-name">${station.name}</span>
+                         <span class="station-distance">(${(station.distance/1000).toFixed(1)} km from route)</span>
+                       </div>`;
         });
-        response += "\nYou can see them on the map by making sure the Gas Stations toggle is enabled.";
-        addMessage(response, 'bot');
+        
+        stationsHTML += `</div>
+                      <div class="station-tip">You can view them on the map by enabling the Gas Stations toggle.</div>`;
+        
+        addHTMLMessage(stationsHTML, 'bot');
       } else {
         addMessage("I don't see any gas stations loaded. Please plan a route first, and I'll find gas stations along the way.", 'bot');
       }
+      return;
+    }
+    
+    // Use Groq API for general questions
+    if (message.trim().endsWith('?') || 
+        message.length > 15 || 
+        lowerMessage.includes('what') || 
+        lowerMessage.includes('how') ||
+        lowerMessage.includes('why') ||
+        lowerMessage.includes('can you')) {
+      fetchGroqResponse(message);
       return;
     }
     
@@ -200,6 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Fetch weather data from OpenWeatherMap API
   async function fetchWeather(location) {
     try {
+      console.log(`Fetching weather for ${location} with API key ${WEATHER_API_KEY}`);
       const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
         params: {
           q: location,
@@ -208,38 +258,264 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       });
       
+      console.log("Weather API response:", response.data);
+      
       const data = response.data;
       const weatherDescription = data.weather[0].description;
       const temperature = data.main.temp;
       const feelsLike = data.main.feels_like;
       const humidity = data.main.humidity;
       const windSpeed = data.wind.speed;
+      const icon = data.weather[0].icon;
       
       hideTypingIndicator();
       
-      // Create a formatted weather message
+      // Create a formatted weather message with icon
       const weatherHTML = `
         <div>Current weather in ${data.name}:</div>
         <div class="weather-card">
-          <h4>${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}</h4>
-          <div>🌡️ Temperature: ${temperature.toFixed(1)}°C (Feels like: ${feelsLike.toFixed(1)}°C)</div>
-          <div>💧 Humidity: ${humidity}%</div>
-          <div>💨 Wind: ${windSpeed} m/s</div>
+          <div class="weather-icon">
+            <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${weatherDescription}">
+          </div>
+          <div class="weather-details">
+            <h4>${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}</h4>
+            <div>🌡️ Temperature: ${temperature.toFixed(1)}°C (Feels like: ${feelsLike.toFixed(1)}°C)</div>
+            <div>💧 Humidity: ${humidity}%</div>
+            <div>💨 Wind: ${windSpeed} m/s</div>
+          </div>
         </div>
       `;
       
       // Create a weather message element
-      const messageElement = document.createElement('div');
-      messageElement.classList.add('chatbot-message');
-      messageElement.classList.add('bot-message');
-      messageElement.innerHTML = weatherHTML;
-      chatbotMessages.appendChild(messageElement);
-      chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+      addHTMLMessage(weatherHTML, 'bot');
       
     } catch (error) {
       console.error('Error fetching weather:', error);
       hideTypingIndicator();
       addMessage(`I couldn't find weather information for ${location}. Please try another location.`, 'bot');
+    }
+  }
+  
+  // Fetch attractions using Groq API
+  async function fetchAttractionsWithGroq(destination, userQuery) {
+    try {
+      hideTypingIndicator();
+      showTypingIndicator();
+      
+      const prompt = `You are a travel assistant. The user is planning a trip to ${destination} and wants to know about attractions or things to do there. Their query was: "${userQuery}". 
+      
+      Provide a concise list of 5 specific attractions or activities in ${destination} that would appeal to most travelers. Format it as a numbered list with brief 1-line descriptions for each. Focus on the most popular or interesting places. Keep your response under 200 words and make it enthusiastic but factual.`;
+      
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about attractions and points of interest." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 300
+      }, {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log("Groq API response:", response.data);
+      
+      if (response.data && response.data.choices && response.data.choices[0]) {
+        const attractionsText = response.data.choices[0].message.content;
+        
+        // Format the attractions with nice HTML
+        const formattedHTML = `
+          <div class="groq-attractions">
+            <div class="groq-attractions-title">Top attractions in ${destination}:</div>
+            <div class="groq-attractions-content">${attractionsText.replace(/\n/g, '<br>')}</div>
+          </div>
+        `;
+        
+        hideTypingIndicator();
+        addHTMLMessage(formattedHTML, 'bot');
+      } else {
+        throw new Error("Invalid response from Groq API");
+      }
+    } catch (error) {
+      console.error('Error fetching attractions with Groq:', error);
+      hideTypingIndicator();
+      
+      // Fallback to basic attractions list
+      if (window.attractionsList && window.attractionsList.length > 0) {
+        const attractions = window.attractionsList.slice(0, 3);
+        let response = "Here are some attractions along your route:\n";
+        attractions.forEach((attraction, i) => {
+          response += `${i+1}. ${attraction.name}\n`;
+        });
+        response += "\nYou can see them on the map by making sure the Attractions toggle is enabled.";
+        addMessage(response, 'bot');
+      } else {
+        addMessage(`I couldn't get information about attractions in ${destination} right now. Please try again later.`, 'bot');
+      }
+    }
+  }
+  
+  // Fetch route attractions using Groq API
+  async function fetchRouteAttractionsWithGroq(startCity, endCity, userQuery) {
+    try {
+      hideTypingIndicator();
+      showTypingIndicator();
+      
+      // Determine if we have intermediate cities or locations
+      let routeDescription = '';
+      let majorLocations = [];
+      if (window.currentRoute && window.currentRoute.features && window.currentRoute.features[0].properties.segments) {
+        const segments = window.currentRoute.features[0].properties.segments;
+        if (segments[0] && segments[0].steps) {
+          const steps = segments[0].steps;
+          // Extract major cities from the route steps
+          majorLocations = steps
+            .filter(step => step.name && step.name.length > 3)
+            .map(step => step.name)
+            .filter((name, index, self) => self.indexOf(name) === index)
+            .slice(0, 5); // Limit to 5 major points
+            
+          if (majorLocations.length > 0) {
+            routeDescription = `, passing through ${majorLocations.join(', ')}`;
+          }
+        }
+      }
+      
+      // Create a comprehensive prompt for the route
+      const prompt = `You are a travel assistant. The user is planning a road trip from ${startCity} to ${endCity}${routeDescription} and wants to know about attractions to visit along this route. Their query was: "${userQuery}".
+      
+      Provide a detailed response with the following structure:
+      
+      1. A brief introduction about the route's tourism potential (1-2 sentences only)
+      2. A list of 10 must-visit attractions along this entire route (not just at the destination)
+      3. Group attractions by location/city when possible
+      4. For each attraction, provide a one-line description of what makes it interesting
+      5. Include a mix of natural landmarks, historical sites, and entertainment venues
+      
+      Format the attractions in a numbered list with city/location names as subheadings in bold or with markdown (e.g., **City Name**). Your entire response should be under 400 words and enthusiastic but factual.`;
+      
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about road trips and attractions along routes. You specialize in providing well-organized lists of diverse attractions that cover the entire journey, not just the destination." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 600
+      }, {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log("Groq Route Attractions API response:", response.data);
+      
+      if (response.data && response.data.choices && response.data.choices[0]) {
+        const attractionsText = response.data.choices[0].message.content;
+        
+        // Create a visual route representation
+        let routeVisualization = `
+          <div class="route-attractions-map">
+            <span class="route-start">${startCity}</span>
+            <span class="route-line"></span>
+        `;
+        
+        // Add intermediate points if available
+        if (majorLocations.length > 0) {
+          // Only show up to 3 intermediate locations to avoid clutter
+          const displayLocations = majorLocations.slice(0, Math.min(3, majorLocations.length));
+          displayLocations.forEach(location => {
+            routeVisualization += `
+              <span class="route-mid">${location}</span>
+              <span class="route-line"></span>
+            `;
+          });
+        }
+        
+        routeVisualization += `<span class="route-end">${endCity}</span></div>`;
+        
+        // Format the attractions with nice HTML
+        const formattedHTML = `
+          <div class="groq-attractions">
+            <div class="groq-attractions-title">Top attractions from ${startCity} to ${endCity}:</div>
+            ${routeVisualization}
+            <div class="groq-attractions-content">${attractionsText
+              .replace(/\n/g, '<br>')
+              .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+              .replace(/^(\d+)\./gm, '<strong>$1.</strong>')}
+            </div>
+          </div>
+        `;
+        
+        hideTypingIndicator();
+        addHTMLMessage(formattedHTML, 'bot');
+      } else {
+        throw new Error("Invalid response from Groq API");
+      }
+    } catch (error) {
+      console.error('Error fetching route attractions with Groq:', error);
+      hideTypingIndicator();
+      
+      // Try the destination-only approach as fallback
+      try {
+        fetchAttractionsWithGroq(endCity, userQuery);
+      } catch (fallbackError) {
+        // Final fallback to basic attractions list
+        if (window.attractionsList && window.attractionsList.length > 0) {
+          const attractions = window.attractionsList.slice(0, 3);
+          let response = "Here are some attractions along your route:\n";
+          attractions.forEach((attraction, i) => {
+            response += `${i+1}. ${attraction.name}\n`;
+          });
+          response += "\nYou can see them on the map by making sure the Attractions toggle is enabled.";
+          addMessage(response, 'bot');
+        } else {
+          addMessage(`I couldn't get information about attractions between ${startCity} and ${endCity} right now. Please try again later.`, 'bot');
+        }
+      }
+    }
+  }
+  
+  // Fetch general response using Groq API
+  async function fetchGroqResponse(userQuery) {
+    try {
+      const routeInfo = window.currentStartAddress && window.currentEndAddress ? 
+        `The user is planning a road trip from ${window.currentStartAddress} to ${window.currentEndAddress}.` : 
+        'The user is planning a road trip.';
+      
+      const prompt = `${routeInfo} They asked: "${userQuery}". 
+      
+      Provide a helpful, concise response that directly answers their question. Keep it under 100 words and be friendly but to the point.`;
+      
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: "You are a travel assistant providing concise, helpful information to travelers planning road trips." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 150
+      }, {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.data && response.data.choices && response.data.choices[0]) {
+        hideTypingIndicator();
+        addMessage(response.data.choices[0].message.content, 'bot');
+      } else {
+        throw new Error("Invalid response from Groq API");
+      }
+    } catch (error) {
+      console.error('Error fetching response from Groq:', error);
+      hideTypingIndicator();
+      addMessage("I'm not sure about that. Could you ask something about your trip, weather, or attractions?", 'bot');
     }
   }
 }); 

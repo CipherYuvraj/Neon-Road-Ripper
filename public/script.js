@@ -24,7 +24,7 @@ const UNSPLASH_ACCESS_KEY = 'w30gVPHf6paeTEWGQgP2maO_u5K4ncjRE4EAHicCskg'; // Ad
 // Initialize OpenRouteService clients
 const orsDirections = new Openrouteservice.Directions({ api_key: ORS_API_KEY });
 const orsGeocode = new Openrouteservice.Geocode({ api_key: ORS_API_KEY });
-const orsPois = new Openrouteservice.Pois({ api_key: ORS_API_KEY });
+// Note: We're not using the client for POIs anymore since we're using direct fetch calls
 
 // Map initialization function
 function initMap() {
@@ -66,7 +66,7 @@ function initMap() {
         'line-cap': 'round'
       },
       paint: {
-        'line-color': '#39ff14', // Neon green
+        'line-color': '#19e6b3', // Changed to teal to match the new theme
         'line-width': 6,
         'line-opacity': 0.8,
         'line-dasharray': [0, 2]
@@ -257,35 +257,154 @@ function displayRoute(routeData, startCoords, endCoords, startAddress, endAddres
   
   // Update trip summary
   updateTripSummary({
-    distance: distance,
-    duration: duration,
-    startAddress: startAddress,
-    endAddress: endAddress
+    distance,
+    duration,
+    startAddress,
+    endAddress
   });
+  
+  // Calculate trip costs
+  calculateTripCosts(distance, duration, startAddress, endAddress);
   
   // Update distance overlay
   updateDistanceOverlay(distance);
   
-  // Get coordinates for markers
-  const routeCoords = routeData.features[0].geometry.coordinates;
-  
-  // Add start and end markers
+  // Add markers for start and end points
   addCustomMarker(startCoords, 'start', startAddress);
   addCustomMarker(endCoords, 'end', endAddress);
   
-  // Find places along route
+  // Find places along the route (gas stations and attractions)
+  const routeCoords = routeData.features[0].geometry.coordinates;
   findPlacesAlongRoute(routeCoords);
-  
-  // Fit map to show the route
-  const bounds = new mapboxgl.LngLatBounds();
-  routeCoords.forEach(coord => bounds.extend(coord));
-  map.fitBounds(bounds, { padding: 50 });
   
   // Show summary section
   document.getElementById('summary').classList.remove('hidden');
   
   // Hide loading indicator
   document.getElementById('loading').classList.add('hidden');
+  
+  // Fit map to show entire route
+  const bounds = new mapboxgl.LngLatBounds();
+  routeCoords.forEach(coord => bounds.extend(coord));
+  map.fitBounds(bounds, { padding: 50 });
+}
+
+// Calculate trip costs using Groq API
+async function calculateTripCosts(distance, duration, startAddress, endAddress) {
+  try {
+    // Default calculations first (as fallback)
+    const distanceKm = distance / 1000;
+    const durationHours = duration / 3600;
+    
+    // Set default values - using Indian metrics
+    // Average fuel price in India is around 100 INR per liter
+    // Average car consumption is around 15 km/liter in India
+    const fuelConsumptionLPer100Km = 6.7; // 15 km/L is about 6.7L/100km
+    const fuelPriceINR = 100; // ₹100 per liter
+    const fuelCostINR = (distanceKm / 100) * fuelConsumptionLPer100Km * fuelPriceINR;
+    
+    let fuelCost = `₹${fuelCostINR.toFixed(2)}`;
+    let travelTime = `${Math.floor(durationHours)} hours ${Math.floor((durationHours % 1) * 60)} minutes`;
+    let restStops = Math.ceil(durationHours / 2); // Indian roads often require more rest stops
+    let tollCost = 'No data available';
+    
+    // Update UI with default calculations first
+    document.getElementById('fuel-cost').textContent = fuelCost;
+    document.getElementById('travel-time').textContent = travelTime;
+    document.getElementById('rest-stops').textContent = restStops;
+    document.getElementById('toll-cost').textContent = tollCost;
+    
+    // Make API request to Groq for more accurate data
+    if (window.GROQ_API_KEY) {
+      // Show loading state
+      const costElements = ['fuel-cost', 'rest-stops', 'toll-cost'];
+      costElements.forEach(id => {
+        const element = document.getElementById(id);
+        element.classList.add('cost-loading');
+        element.dataset.originalText = element.textContent;
+        element.textContent = 'Calculating...';
+      });
+      
+      const prompt = `You are a road trip cost calculator assistant for travel in India. 
+      
+      Calculate the following for a road trip from ${startAddress} to ${endAddress} with a distance of ${distanceKm.toFixed(1)} km and duration of ${durationHours.toFixed(1)} hours in India:
+      
+      1. Estimated fuel cost (in Indian Rupees)
+      2. Suggested number of rest stops
+      3. Estimated toll expenses (if any)
+      
+      For fuel cost, assume average fuel consumption of 15km/liter and current Indian fuel prices of around 100 INR per liter. For tolls, check if the route likely includes toll roads between these locations in India.
+      
+      Reply with ONLY a JSON object with these properties:
+      {
+        "fuelCost": "₹XX.XX",
+        "restStops": X,
+        "tollCost": "₹XX.XX" or "None" if no tolls
+      }
+      
+      Ensure the format is exactly as specified, with no additional text.`;
+      
+      // Make request to Groq API
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${window.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "You are a helpful assistant that calculates road trip costs for Indian travel and returns data in JSON format only." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.2,
+          max_tokens: 250,
+          response_format: { type: "json_object" }
+        })
+      });
+      
+      const data = await response.json();
+      
+      // Remove loading state for all elements
+      costElements.forEach(id => {
+        const element = document.getElementById(id);
+        element.classList.remove('cost-loading');
+        // Restore original text if we can't get new data
+        element.textContent = element.dataset.originalText;
+      });
+      
+      if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        try {
+          // Parse the JSON response
+          const tripData = JSON.parse(data.choices[0].message.content);
+          
+          // Update UI with the more accurate data
+          if (tripData.fuelCost) document.getElementById('fuel-cost').textContent = tripData.fuelCost;
+          if (tripData.restStops) document.getElementById('rest-stops').textContent = tripData.restStops;
+          if (tripData.tollCost) document.getElementById('toll-cost').textContent = tripData.tollCost;
+          
+          // Add highlight animation to the updated fields
+          ['fuel-cost', 'rest-stops', 'toll-cost'].forEach(id => {
+            const element = document.getElementById(id);
+            element.classList.add('highlight');
+            setTimeout(() => element.classList.remove('highlight'), 2000);
+          });
+        } catch (parseError) {
+          console.error('Error parsing Groq API response:', parseError);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error calculating trip costs:', error);
+    // Reset loading state on error
+    ['fuel-cost', 'rest-stops', 'toll-cost'].forEach(id => {
+      const element = document.getElementById(id);
+      if (element.classList.contains('cost-loading')) {
+        element.classList.remove('cost-loading');
+        element.textContent = element.dataset.originalText || 'Error';
+      }
+    });
+  }
 }
 
 // Update distance overlay
@@ -344,29 +463,76 @@ async function findPlacesAlongRoute(routeCoords) {
 
 // Find points of interest near route points
 async function findPointsOfInterest(points, categories) {
+  console.log("Searching for POIs in categories:", categories);
   const allPlaces = [];
   const uniqueIds = new Set();
+  
+  // Get category IDs
+  const categoryIds = getCategoryIdsForType(categories);
+  console.log("Using category IDs:", categoryIds);
   
   // Search for POIs near each point
   for (const point of points) {
     try {
-      const response = await orsPois.pois({
+      console.log("Searching near point:", point);
+      
+      // Direct API call with fetch instead of using the client
+      const url = `https://api.openrouteservice.org/pois`;
+      const body = {
         request: 'pois',
         geojson: {
           type: 'Point',
           coordinates: point
         },
-        filter_category_ids: getCategoryIdsForType(categories),
-        buffer: 5000, // Increased to 5km radius for better results
-        limit: 20
+        filter_category_ids: categoryIds,
+        buffer: 5000, // 5km radius
+        limit: 20,
+        sortby: 'distance'
+      };
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
+          'Authorization': ORS_API_KEY,
+          'Content-Type': 'application/json; charset=utf-8'
+        },
+        body: JSON.stringify(body)
       });
       
-      if (response.features && response.features.length > 0) {
-        response.features.forEach(place => {
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('POI API error:', response.status, errorText);
+        throw new Error(`POI search failed: ${response.status} ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log("POI API response:", data);
+      
+      if (data.features && data.features.length > 0) {
+        // Process and add places to our results
+        data.features.forEach(place => {
+          // Extract a unique ID
+          const id = place.properties.osm_id || 
+                   place.properties.id || 
+                   `${place.geometry.coordinates[0]}-${place.geometry.coordinates[1]}`;
+          
           // Check if we already have this place
-          if (!uniqueIds.has(place.properties.osm_id)) {
-            uniqueIds.add(place.properties.osm_id);
-            allPlaces.push(place);
+          if (!uniqueIds.has(id)) {
+            uniqueIds.add(id);
+            
+            // Create a standardized place object
+            const processedPlace = {
+              id: id,
+              name: place.properties.name || 
+                   place.properties.category_name || 
+                   (categories[0] === 'fuel' ? 'Gas Station' : 'Attraction'),
+              geometry: place.geometry,
+              properties: place.properties,
+              distance: place.properties.distance || 0
+            };
+            
+            allPlaces.push(processedPlace);
           }
         });
       }
@@ -375,25 +541,49 @@ async function findPointsOfInterest(points, categories) {
     }
   }
   
-  // If we didn't find any places, try a fallback approach with a larger radius
+  // If we didn't find any places, try a fallback approach with Overpass API
   if (allPlaces.length === 0) {
+    console.log("No POIs found, trying fallback...");
+    
     try {
       const middlePoint = points[Math.floor(points.length / 2)];
-      const response = await orsPois.pois({
-        request: 'pois',
-        geojson: {
-          type: 'Point',
-          coordinates: middlePoint
-        },
-        filter_category_ids: getCategoryIdsForType(categories),
-        buffer: 10000, // 10km radius
-        limit: 20
-      });
       
-      if (response.features && response.features.length > 0) {
-        response.features.forEach(place => {
-          if (!uniqueIds.has(place.properties.osm_id)) {
-            uniqueIds.add(place.properties.osm_id);
+      // Use Overpass API as fallback
+      let overpassQuery;
+      if (categories.includes('fuel')) {
+        overpassQuery = `[out:json];(node["amenity"="fuel"](around:10000,${middlePoint[1]},${middlePoint[0]}););out body 10;`;
+      } else {
+        overpassQuery = `[out:json];(node["tourism"](around:10000,${middlePoint[1]},${middlePoint[0]});node["natural"](around:10000,${middlePoint[1]},${middlePoint[0]}););out body 10;`;
+      }
+      
+      const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
+      const data = await response.json();
+      
+      console.log("Overpass API fallback response:", data);
+      
+      if (data.elements && data.elements.length > 0) {
+        // Process Overpass results
+        data.elements.forEach(element => {
+          const id = `overpass-${element.id}`;
+          if (!uniqueIds.has(id)) {
+            uniqueIds.add(id);
+            
+            // Create GeoJSON feature
+            const place = {
+              id: id,
+              name: element.tags.name || 
+                   (categories[0] === 'fuel' ? 'Gas Station' : 'Attraction'),
+              geometry: {
+                type: 'Point',
+                coordinates: [element.lon, element.lat]
+              },
+              properties: {
+                ...element.tags,
+                osm_id: element.id,
+                distance: 0 // We don't have exact distance info
+              }
+            };
+            
             allPlaces.push(place);
           }
         });
@@ -402,6 +592,8 @@ async function findPointsOfInterest(points, categories) {
       console.error('Error in fallback POI search:', error);
     }
   }
+  
+  console.log(`Found ${allPlaces.length} places for categories: ${categories}`);
   
   // Limit to 5 results
   return allPlaces.slice(0, 5);
@@ -459,10 +651,18 @@ function addCustomMarker(coords, type, title) {
 
 // Add marker for places (gas stations or attractions)
 function addPlaceMarker(place, type) {
-  const coordinates = place.geometry.coordinates;
-  const properties = place.properties;
-  const name = properties.name || 'Unnamed';
-  const placeId = properties.id || `place-${Math.random().toString(36).substring(2, 10)}`;
+  console.log(`Adding ${type} marker for:`, place);
+  
+  // Handle different data structures
+  const coordinates = place.geometry ? place.geometry.coordinates : place.coordinates;
+  const name = place.name || 'Unnamed';
+  const placeId = place.id || place.properties?.osm_id || `place-${Math.random().toString(36).substring(2, 10)}`;
+  
+  // Skip if no valid coordinates
+  if (!coordinates || coordinates.length < 2) {
+    console.error('Invalid coordinates for place:', place);
+    return null;
+  }
   
   // Create marker element
   const el = document.createElement('div');
@@ -496,7 +696,7 @@ function addPlaceMarker(place, type) {
     id: placeId,
     name: name,
     coordinates: coordinates,
-    distance: properties.distance
+    distance: place.distance || place.properties?.distance || 0
   };
   
   // Add click handler for attractions to show images
@@ -547,6 +747,8 @@ function updateTripSummary(data) {
 
 // Update places list in the summary
 function updatePlacesList(places, type) {
+  console.log(`Updating ${type} places list with:`, places);
+  
   // Get the appropriate container
   const container = type === 'gas' ? document.getElementById('gas-stations-list') : document.getElementById('attractions-list');
   
@@ -559,28 +761,37 @@ function updatePlacesList(places, type) {
     return;
   }
   
+  // Normalize places data for consistent access
+  const normalizedPlaces = places.map(place => ({
+    id: place.id,
+    name: place.name || place.properties?.name || 'Unnamed Place',
+    distance: place.distance || place.properties?.distance || 0,
+    coordinates: place.geometry?.coordinates || [0, 0]
+  }));
+  
   // Store in window object for chatbot access
   if (type === 'gas') {
-    window.gasStationsList = places;
+    window.gasStationsList = normalizedPlaces;
   } else {
-    window.attractionsList = places;
+    window.attractionsList = normalizedPlaces;
   }
   
   // Add places to list
-  places.forEach(place => {
+  normalizedPlaces.forEach(place => {
     const placeElement = document.createElement('div');
     placeElement.classList.add('mb-2', 'pb-2', 'border-b', 'border-gray-600');
     
     // Create clickable name that will show the place on map
     const nameElement = document.createElement('div');
     nameElement.classList.add('font-medium', 'cursor-pointer', 'hover:text-green-400');
-    nameElement.textContent = place.name || 'Unnamed Place';
+    nameElement.textContent = place.name;
     
     // Add click event to highlight marker on map
     nameElement.addEventListener('click', () => {
       // Find marker and trigger animation
-      const marker = type === 'gas' ? gasMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id) :
-                                     attractionMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id);
+      const marker = type === 'gas' ? 
+        gasMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id.toString()) :
+        attractionMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id.toString());
       
       if (marker) {
         // Pan map to marker
@@ -597,7 +808,22 @@ function updatePlacesList(places, type) {
         
         // If it's an attraction, also load images
         if (type === 'attraction') {
-          fetchImagesByPlace(place.name || 'Attraction');
+          fetchImagesByPlace(place.name);
+        }
+      } else {
+        console.warn(`Could not find marker for place: ${place.id}`);
+        // If marker not found, at least try to center on the coordinates
+        if (place.coordinates && place.coordinates.length === 2) {
+          map.flyTo({
+            center: place.coordinates,
+            zoom: 15,
+            speed: 1.5
+          });
+          
+          // For attractions, load images anyway
+          if (type === 'attraction') {
+            fetchImagesByPlace(place.name);
+          }
         }
       }
     });
@@ -806,3 +1032,14 @@ document.addEventListener('keydown', (e) => {
 
 // Initialize the map when the page loads
 document.addEventListener('DOMContentLoaded', initMap);
+
+// Add Groq API key from chatbot.js if it exists
+document.addEventListener('DOMContentLoaded', function() {
+  // Wait a bit to ensure chatbot.js has loaded
+  setTimeout(() => {
+    // Try to get Groq API key from global scope (set by chatbot.js)
+    if (typeof GROQ_API_KEY !== 'undefined') {
+      window.GROQ_API_KEY = GROQ_API_KEY;
+    }
+  }, 500);
+});
