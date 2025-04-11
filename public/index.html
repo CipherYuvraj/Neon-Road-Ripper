@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Road Trip Planner</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <!-- OpenRouteService JS Client -->
+  <script src="https://unpkg.com/openrouteservice-js"></script>
+  <!-- Mapbox GL JS -->
+  <script src='https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css' rel='stylesheet' />
+  <!-- Weather API -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    /* Custom styles */
+    .neon-text {
+      text-shadow: 0 0 10px #39ff14, 0 0 20px #39ff14, 0 0 30px #39ff14;
+    }
+    .neon-border {
+      box-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14;
+    }
+    .map-container {
+      height: 500px;
+      width: 100%;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      position: relative;
+    }
+    .animate-fadeIn {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .pulse-slow {
+      animation: pulse 3s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    /* Distance overlay */
+    .distance-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(30, 30, 30, 0.8);
+      color: #39ff14;
+      padding: 8px 16px;
+      border-radius: 8px;
+      z-index: 1000;
+      font-weight: bold;
+      font-size: 18px;
+      border: 1px solid #39ff14;
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+      transform: scale(0);
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .distance-overlay.active {
+      transform: scale(1);
+    }
+    /* Image Gallery */
+    .image-gallery {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    .image-gallery.active {
+      display: flex;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    .gallery-image {
+      max-width: 90%;
+      max-height: 70vh;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 191, 255, 0.6);
+      transition: transform 0.3s ease;
+    }
+    .gallery-controls {
+      display: flex;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .gallery-btn {
+      background-color: #00bfff;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .gallery-btn:hover {
+      background-color: #0095cc;
+      transform: scale(1.05);
+    }
+    .gallery-title {
+      color: white;
+      font-size: 24px;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+    .gallery-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: white;
+      font-size: 30px;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .gallery-close:hover {
+      transform: scale(1.2);
+    }
+    /* Animated markers */
+    .bounce-animation {
+      animation: bounce 0.6s ease-in-out;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-15px); }
+    }
+    /* Custom mapbox marker styles */
+    .mapboxgl-marker {
+      cursor: pointer;
+    }
+    .marker-start {
+      width: 20px;
+      height: 20px;
+      background-color: #39ff14;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.7);
+    }
+    .marker-end {
+      width: 20px;
+      height: 20px;
+      background-color: #ff073a;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(255, 7, 58, 0.7);
+    }
+    .marker-gas {
+      width: 16px;
+      height: 16px;
+      background-color: #ff073a;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .marker-attraction {
+      width: 16px;
+      height: 16px;
+      background-color: #00bfff;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    /* Popup styles */
+    .mapboxgl-popup-content {
+      background-color: rgba(30, 30, 30, 0.9);
+      color: white;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+    .mapboxgl-popup-close-button {
+      color: white;
+      font-size: 20px;
+    }
+    .mapboxgl-popup-tip {
+      border-top-color: rgba(30, 30, 30, 0.9) !important;
+    }
+    /* Chatbot styles */
+    .chatbot-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    
+    .chatbot-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #39ff14;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(57, 255, 20, 0.6);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .chatbot-button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(57, 255, 20, 0.8);
+    }
+    
+    .chatbot-icon {
+      font-size: 24px;
+      color: #1a1a1a;
+    }
+    
+    .chatbot-panel {
+      position: absolute;
+      bottom: 70px;
+      right: 0;
+      width: 350px;
+      height: 450px;
+      background-color: rgba(26, 26, 26, 0.95);
+      border-radius: 12px;
+      border: 1px solid #39ff14;
+      box-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: scale(0);
+      transform-origin: bottom right;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    .chatbot-panel.active {
+      transform: scale(1);
+    }
+    
+    .chatbot-header {
+      background-color: #39ff14;
+      color: #1a1a1a;
+      padding: 12px 16px;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .chatbot-close {
+      cursor: pointer;
+      font-size: 18px;
+      transition: transform 0.2s ease;
+    }
+    
+    .chatbot-close:hover {
+      transform: scale(1.2);
+    }
+    
+    .chatbot-messages {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .chatbot-message {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    .user-message {
+      align-self: flex-end;
+      background-color: #39ff14;
+      color: #1a1a1a;
+      margin-left: auto;
+      border-bottom-right-radius: 4px;
+    }
+    
+    .bot-message {
+      align-self: flex-start;
+      background-color: #333;
+      color: white;
+      margin-right: auto;
+      border-bottom-left-radius: 4px;
+    }
+    
+    .weather-card {
+      background-color: rgba(0, 191, 255, 0.2);
+      border: 1px solid #00bfff;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 8px;
+      color: white;
+      width: 100%;
+    }
+    
+    .weather-card h4 {
+      color: #00bfff;
+      margin: 0 0 8px 0;
+    }
+    
+    .chatbot-input-container {
+      display: flex;
+      padding: 12px;
+      border-top: 1px solid #333;
+    }
+    
+    .chatbot-input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #333;
+      background-color: #222;
+      color: white;
+      border-radius: 20px;
+      outline: none;
+    }
+    
+    .chatbot-input:focus {
+      border-color: #39ff14;
+    }
+    
+    .chatbot-send {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: #39ff14;
+      color: #1a1a1a;
+      border: none;
+      margin-left: 8px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.2s ease;
+    }
+    
+    .chatbot-send:hover {
+      transform: scale(1.05);
+    }
+    
+    /* Loading indicator for chatbot */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      margin: 8px 0;
+    }
+    
+    .typing-indicator span {
+      width: 8px;
+      height: 8px;
+      margin: 0 2px;
+      background-color: #888;
+      border-radius: 50%;
+      display: inline-block;
+      animation: typing 1.4s infinite ease-in-out both;
+    }
+    
+    .typing-indicator span:nth-child(1) {
+      animation-delay: 0s;
+    }
+    
+    .typing-indicator span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    
+    .typing-indicator span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    
+    @keyframes typing {
+      0%, 100% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+  <header class="bg-gray-800 p-6 border-b border-gray-700">
+    <div class="container mx-auto">
+      <h1 class="text-4xl font-bold text-center neon-text text-green-400">Smart Road Trip Planner</h1>
+      <p class="text-gray-400 text-center mt-2">Discover the perfect route for your next adventure</p>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-4 lg:p-8">
+    <div class="flex flex-col md:flex-row gap-6">
+      <!-- Form Section -->
+      <div class="md:w-1/3 space-y-6">
+        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h2 class="text-xl font-bold mb-4 text-green-400">Plan Your Trip</h2>
+          <form id="trip-form" class="space-y-4">
+            <div>
+              <label for="start" class="block text-sm font-medium text-gray-300 mb-1">Starting Point</label>
+              <input type="text" id="start" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" 
+                     placeholder="Enter starting location (e.g., Denver, CO)">
+            </div>
+            <div>
+              <label for="end" class="block text-sm font-medium text-gray-300 mb-1">Destination</label>
+              <input type="text" id="end" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" 
+                     placeholder="Enter destination (e.g., Boulder, CO)">
+            </div>
+            <div class="pt-2">
+              <button type="submit" class="w-full p-3 bg-green-500 hover:bg-green-600 transition duration-300 rounded-md font-bold neon-border">
+                Plan My Trip
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Options Section -->
+        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h2 class="text-xl font-bold mb-4 text-green-400">Options</h2>
+          <div class="space-y-3">
+            <div class="flex items-center">
+              <input type="checkbox" id="avoid-highways" class="mr-2 h-4 w-4 accent-green-500">
+              <label for="avoid-highways" class="text-gray-300">Prefer scenic routes</label>
+            </div>
+            <div class="flex items-center">
+              <input type="checkbox" id="avoid-tolls" class="mr-2 h-4 w-4 accent-green-500">
+              <label for="avoid-tolls" class="text-gray-300">Avoid toll roads</label>
+            </div>
+          </div>
+          
+          <h2 class="text-xl font-bold my-4 text-green-400">Show/Hide</h2>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="toggle-gas" class="p-2 bg-red-500 hover:bg-red-600 rounded-md transition duration-300 flex items-center justify-center">
+              <span id="gas-icon" class="mr-1">🟢</span> Gas Stations
+            </button>
+            <button id="toggle-attractions" class="p-2 bg-blue-500 hover:bg-blue-600 rounded-md transition duration-300 flex items-center justify-center">
+              <span id="attractions-icon" class="mr-1">🟢</span> Attractions
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Section -->
+      <div class="md:w-2/3">
+        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <div id="map" class="map-container">
+            <div id="distance-overlay" class="distance-overlay">Distance: 0 km</div>
+          </div>
+          <div id="loading" class="hidden absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-50">
+            <div class="text-green-400 pulse-slow">Loading route...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trip Summary Section -->
+    <div id="summary" class="mt-8 p-6 bg-gray-800 rounded-lg border border-gray-700 hidden animate-fadeIn">
+      <h2 class="text-2xl font-bold mb-4 text-green-400">Trip Summary</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-gray-700 p-4 rounded-lg">
+          <h3 class="text-lg font-semibold text-green-400 mb-2">Route Details</h3>
+          <div id="route-details" class="text-gray-300 space-y-2">
+            <p>Please plan a trip to see details.</p>
+          </div>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg">
+          <h3 class="text-lg font-semibold text-blue-400 mb-2">Attractions</h3>
+          <div id="attractions-list" class="text-gray-300 space-y-2">
+            <p>Please plan a trip to see attractions.</p>
+          </div>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg">
+          <h3 class="text-lg font-semibold text-red-500 mb-2">Gas Stations</h3>
+          <div id="gas-stations-list" class="text-gray-300 space-y-2">
+            <p>Please plan a trip to see gas stations.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="mt-12 p-6 bg-gray-800 border-t border-gray-700">
+    <div class="container mx-auto text-center text-gray-400 text-sm">
+      <p>© 2025 Smart Road Trip Planner | Powered by OpenRouteService and Mapbox</p>
+    </div>
+  </footer>
+
+  <!-- Image Gallery -->
+  <div id="image-gallery" class="image-gallery">
+    <div class="gallery-close" id="gallery-close">×</div>
+    <h3 class="gallery-title" id="gallery-title">Attraction Images</h3>
+    <img id="gallery-image" class="gallery-image" src="" alt="Attraction image">
+    <div class="gallery-controls">
+      <button class="gallery-btn" id="prev-image">Previous</button>
+      <button class="gallery-btn" id="next-image">Next</button>
+    </div>
+  </div>
+
+  <!-- Chatbot Component -->
+  <div class="chatbot-container">
+    <div class="chatbot-panel" id="chatbot-panel">
+      <div class="chatbot-header">
+        <div>TripChat Assistant</div>
+        <div class="chatbot-close" id="chatbot-close">×</div>
+      </div>
+      <div class="chatbot-messages" id="chatbot-messages">
+        <div class="chatbot-message bot-message">
+          Hi there! I'm your Trip Assistant. I can help with weather information, trip recommendations, or answer questions about your route. What can I help you with today?
+        </div>
+      </div>
+      <div class="chatbot-input-container">
+        <input type="text" class="chatbot-input" id="chatbot-input" placeholder="Type your message...">
+        <button class="chatbot-send" id="chatbot-send">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M15.964.686a.5.5 0 0 0-.65-.65L.767 5.855H.766l-.452.18a.5.5 0 0 0-.082.887l.41.26.001.002 4.995 3.178 3.178 4.995.002.002.26.41a.5.5 0 0 0 .886-.083l6-15Zm-1.833 1.89L6.637 10.07l-.215-.338a.5.5 0 0 0-.154-.154l-.338-.215 7.494-7.494 1.178-.471-.47 1.178Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="chatbot-button" id="chatbot-button">
+      <div class="chatbot-icon">💬</div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <!-- Groq integration script -->
+  <script src="chatbot.js"></script>
+</body>
+</html>
