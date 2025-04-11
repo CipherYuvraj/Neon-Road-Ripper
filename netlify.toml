@@ -1,0 +1,18 @@
+[build]
+  command = "npm install"
+  publish = "public"
+
+[functions]
+  directory = "functions"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[dev]
+  command = "npm run dev"
+  port = 3000
+  publish = "public"
+
+# Environment variables will need to be set in the Netlify UI 

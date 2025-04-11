@@ -12,24 +12,19 @@ let currentDistance = 0;
 let currentGalleryIndex = 0;
 let galleryImages = [];
 
-// OpenRouteService API key - replace with your own
-const ORS_API_KEY = '5b3ce3597851110001cf624829442a9f43784ad9856a716a1af57237';
-
-// Mapbox access token - replace with your own
-const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoicm9uYWs0MTQxNDEiLCJhIjoiY205ZDJuZTF3MDYzMTJrc2ExcHlsMHJyeSJ9.bm4bo3kjtKwlvVbL1Mdirg';
-
-// Unsplash API key for better images - replace with your own
-const UNSPLASH_ACCESS_KEY = 'w30gVPHf6paeTEWGQgP2maO_u5K4ncjRE4EAHicCskg'; // Add your key here
+// API keys are now loaded from deployment-config.js
+// This allows them to be set via environment variables
 
 // Initialize OpenRouteService clients
-const orsDirections = new Openrouteservice.Directions({ api_key: ORS_API_KEY });
-const orsGeocode = new Openrouteservice.Geocode({ api_key: ORS_API_KEY });
+// Using the window.ORS_API_KEY set in deployment-config.js
+const orsDirections = new Openrouteservice.Directions({ api_key: window.ORS_API_KEY });
+const orsGeocode = new Openrouteservice.Geocode({ api_key: window.ORS_API_KEY });
 // Note: We're not using the client for POIs anymore since we're using direct fetch calls
 
 // Map initialization function
 function initMap() {
-  // Set Mapbox access token
-  mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+  // Set Mapbox access token from window.MAPBOX_ACCESS_TOKEN set in deployment-config.js
+  mapboxgl.accessToken = window.MAPBOX_ACCESS_TOKEN;
   
   // Initialize the map with center closer to a global view
   map = new mapboxgl.Map({
@@ -494,7 +489,7 @@ async function findPointsOfInterest(points, categories) {
         method: 'POST',
         headers: {
           'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
-          'Authorization': ORS_API_KEY,
+          'Authorization': window.ORS_API_KEY,
           'Content-Type': 'application/json; charset=utf-8'
         },
         body: JSON.stringify(body)
@@ -873,7 +868,7 @@ function fetchImagesByPlace(placeName) {
 // Fetch images from Unsplash
 function fetchUnsplashImages(placeName) {
   console.log("Fetching Unsplash images for:", placeName);
-  const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(placeName)}&per_page=10&client_id=${UNSPLASH_ACCESS_KEY}`;
+  const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(placeName)}&per_page=10&client_id=${window.UNSPLASH_ACCESS_KEY}`;
   
   fetch(unsplashUrl)
     .then(response => {

@@ -11,9 +11,8 @@ document.addEventListener('DOMContentLoaded', function() {
   // Weather API key - OpenWeatherMap (Free tier)
   const WEATHER_API_KEY = '03e28cb2274d124535328b83b4f64ff4';
   
-  // Groq API key for attractions recommendations - Make available globally
-  const GROQ_API_KEY = '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';
-  window.GROQ_API_KEY = GROQ_API_KEY; // Make available to other scripts
+  // Groq API key - use the one from deployment-config.js or fallback to a default
+  const GROQ_API_KEY = window.GROQ_API_KEY || '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';
   
   // Toggle chatbot panel visibility
   chatbotButton.addEventListener('click', () => {
@@ -246,21 +245,21 @@ document.addEventListener('DOMContentLoaded', function() {
     addMessage(defaultResponses[Math.floor(Math.random() * defaultResponses.length)], 'bot');
   }
   
-  // Fetch weather data from OpenWeatherMap API
+  // Fetch weather data from OpenWeatherMap API - using native fetch instead of axios
   async function fetchWeather(location) {
     try {
       console.log(`Fetching weather for ${location} with API key ${WEATHER_API_KEY}`);
-      const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
-        params: {
-          q: location,
-          appid: WEATHER_API_KEY,
-          units: 'metric'
-        }
-      });
       
-      console.log("Weather API response:", response.data);
+      const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(location)}&appid=${WEATHER_API_KEY}&units=metric`;
+      const response = await fetch(url);
       
-      const data = response.data;
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("Weather API response:", data);
+      
       const weatherDescription = data.weather[0].description;
       const temperature = data.main.temp;
       const feelsLike = data.main.feels_like;
@@ -296,7 +295,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  // Fetch attractions using Groq API
+  // Fetch attractions using Groq API - using native fetch
   async function fetchAttractionsWithGroq(destination, userQuery) {
     try {
       hideTypingIndicator();
@@ -306,25 +305,32 @@ document.addEventListener('DOMContentLoaded', function() {
       
       Provide a concise list of 5 specific attractions or activities in ${destination} that would appeal to most travelers. Format it as a numbered list with brief 1-line descriptions for each. Focus on the most popular or interesting places. Keep your response under 200 words and make it enthusiastic but factual.`;
       
-      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: "llama3-8b-8192",
-        messages: [
-          { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about attractions and points of interest." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 300
-      }, {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about attractions and points of interest." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 300
+        })
       });
       
-      console.log("Groq API response:", response.data);
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status}`);
+      }
       
-      if (response.data && response.data.choices && response.data.choices[0]) {
-        const attractionsText = response.data.choices[0].message.content;
+      const data = await response.json();
+      console.log("Groq API response:", data);
+      
+      if (data && data.choices && data.choices[0]) {
+        const attractionsText = data.choices[0].message.content;
         
         // Format the attractions with nice HTML
         const formattedHTML = `
@@ -358,7 +364,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  // Fetch route attractions using Groq API
+  // Fetch route attractions using Groq API - using native fetch
   async function fetchRouteAttractionsWithGroq(startCity, endCity, userQuery) {
     try {
       hideTypingIndicator();
@@ -397,25 +403,32 @@ document.addEventListener('DOMContentLoaded', function() {
       
       Format the attractions in a numbered list with city/location names as subheadings in bold or with markdown (e.g., **City Name**). Your entire response should be under 400 words and enthusiastic but factual.`;
       
-      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: "llama3-8b-8192",
-        messages: [
-          { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about road trips and attractions along routes. You specialize in providing well-organized lists of diverse attractions that cover the entire journey, not just the destination." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 600
-      }, {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "You are a helpful travel assistant providing concise, accurate information about road trips and attractions along routes. You specialize in providing well-organized lists of diverse attractions that cover the entire journey, not just the destination." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 600
+        })
       });
       
-      console.log("Groq Route Attractions API response:", response.data);
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status}`);
+      }
       
-      if (response.data && response.data.choices && response.data.choices[0]) {
-        const attractionsText = response.data.choices[0].message.content;
+      const data = await response.json();
+      console.log("Groq Route Attractions API response:", data);
+      
+      if (data && data.choices && data.choices[0]) {
+        const attractionsText = data.choices[0].message.content;
         
         // Create a visual route representation
         let routeVisualization = `
@@ -480,7 +493,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  // Fetch general response using Groq API
+  // Fetch general response using Groq API - using native fetch
   async function fetchGroqResponse(userQuery) {
     try {
       const routeInfo = window.currentStartAddress && window.currentEndAddress ? 
@@ -491,24 +504,32 @@ document.addEventListener('DOMContentLoaded', function() {
       
       Provide a helpful, concise response that directly answers their question. Keep it under 100 words and be friendly but to the point.`;
       
-      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: "llama3-8b-8192",
-        messages: [
-          { role: "system", content: "You are a travel assistant providing concise, helpful information to travelers planning road trips." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 150
-      }, {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "You are a travel assistant providing concise, helpful information to travelers planning road trips." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 150
+        })
       });
       
-      if (response.data && response.data.choices && response.data.choices[0]) {
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.choices && data.choices[0]) {
         hideTypingIndicator();
-        addMessage(response.data.choices[0].message.content, 'bot');
+        addMessage(data.choices[0].message.content, 'bot');
       } else {
         throw new Error("Invalid response from Groq API");
       }

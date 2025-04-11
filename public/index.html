@@ -4,14 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Road Trip Planner</title>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <!-- OpenRouteService JS Client -->
+<script src="https://cdn.tailwindcss.com"></script>  <!-- OpenRouteService JS Client -->
   <script src="https://unpkg.com/openrouteservice-js"></script>
   <!-- Mapbox GL JS -->
   <script src='https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js'></script>
   <link href='https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css' rel='stylesheet' />
   <!-- Weather API -->
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <!-- Remove axios reference, we'll use native fetch -->
+  <!-- Environment variables configuration -->
+  <meta name="ORS_API_KEY" content="%%ORS_API_KEY%%" />
+  <meta name="MAPBOX_ACCESS_TOKEN" content="%%MAPBOX_ACCESS_TOKEN%%" />
+  <meta name="UNSPLASH_ACCESS_KEY" content="%%UNSPLASH_ACCESS_KEY%%" />
+  <meta name="GROQ_API_KEY" content="%%GROQ_API_KEY%%" />
+  <!-- Deployment configuration -->
+  <script src="deployment-config.js"></script>
   <style>
     /* Custom styles with modified neon effects */
     .neon-text {
@@ -738,8 +744,9 @@
     </div>
   </div>
 
+  <!-- Add custom scripts -->
+  <script src="deployment-config.js"></script>
   <script src="script.js"></script>
-  <!-- Groq integration script -->
   <script src="chatbot.js"></script>
 </body>
 </html>

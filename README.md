@@ -123,6 +123,18 @@ Smart Road Trip Planner is a modern web application designed to help travelers p
    - "How long will it take to drive from Bangalore to Chennai?"
    - "What's the fuel cost for this trip?"
 
+## Deployment
+
+This application is ready for deployment on various platforms. For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+### Quick Deployment Options
+
+- **Vercel**: [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyourusername%2Fsmart-road-trip-planner)
+- **Heroku**: [![Deploy to Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/yourusername/smart-road-trip-planner)
+- **Netlify**: [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/yourusername/smart-road-trip-planner)
+
+Remember to set your environment variables as described in the deployment guide.
+
 ## API Reference
 
 ### OpenRouteService
@@ -147,12 +159,20 @@ Smart Road Trip Planner is a modern web application designed to help travelers p
 
 ```
 smart-road-trip-planner/
-├── public/
-│   ├── index.html       # Main HTML file
-│   ├── styles.css       # External CSS styles
-│   ├── script.js        # Main application logic
-│   └── chatbot.js       # AI chatbot integration
-└── README.md            # This documentation
+├── public/               # Static files
+│   ├── index.html        # Main HTML file
+│   ├── styles.css        # External CSS styles
+│   ├── script.js         # Main application logic
+│   ├── chatbot.js        # AI chatbot integration
+│   └── deployment-config.js # Environment variable handling
+├── server.js             # Express server for serving the application
+├── package.json          # Project dependencies and scripts
+├── .env.example          # Example environment variables
+├── .gitignore            # Git ignore configuration
+├── vercel.json           # Vercel deployment configuration
+├── Procfile              # Heroku deployment configuration
+├── DEPLOYMENT.md         # Detailed deployment instructions
+└── README.md             # This documentation
 ```
 
 ## Customization Options

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
+  ],
+  "env": {
+    "ORS_API_KEY": "@ors_api_key",
+    "MAPBOX_ACCESS_TOKEN": "@mapbox_access_token",
+    "UNSPLASH_ACCESS_KEY": "@unsplash_access_key",
+    "GROQ_API_KEY": "@groq_api_key"
+  }
+} 

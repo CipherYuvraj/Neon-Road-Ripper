@@ -1,0 +1,30 @@
+{
+  "name": "Smart Road Trip Planner",
+  "description": "Interactive road trip planning app with route mapping, POI discovery, and AI assistance",
+  "repository": "https://github.com/yourusername/smart-road-trip-planner",
+  "logo": "https://i.imgur.com/qmYuQBJ.png",
+  "keywords": ["node", "express", "maps", "travel", "road-trip", "planner"],
+  "env": {
+    "ORS_API_KEY": {
+      "description": "Your OpenRouteService API key",
+      "required": true
+    },
+    "MAPBOX_ACCESS_TOKEN": {
+      "description": "Your Mapbox access token",
+      "required": true
+    },
+    "UNSPLASH_ACCESS_KEY": {
+      "description": "Your Unsplash API access key",
+      "required": true
+    },
+    "GROQ_API_KEY": {
+      "description": "Your Groq API key for AI features (optional)",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+} 
