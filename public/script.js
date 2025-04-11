@@ -248,6 +248,13 @@ function displayRoute(routeData, startCoords, endCoords, startAddress, endAddres
   const distance = properties.summary.distance;
   const duration = properties.summary.duration;
   
+  // Store in window object for chatbot access
+  window.currentDistance = distance;
+  window.currentDuration = duration;
+  window.currentStartAddress = startAddress;
+  window.currentEndAddress = endAddress;
+  window.currentRoute = routeData;
+  
   // Update trip summary
   updateTripSummary({
     distance: distance,
@@ -455,11 +462,13 @@ function addPlaceMarker(place, type) {
   const coordinates = place.geometry.coordinates;
   const properties = place.properties;
   const name = properties.name || 'Unnamed';
+  const placeId = properties.id || `place-${Math.random().toString(36).substring(2, 10)}`;
   
   // Create marker element
   const el = document.createElement('div');
   el.className = type === 'gas' ? 'marker-gas' : 'marker-attraction';
   el.setAttribute('data-place-name', name);
+  el.setAttribute('data-place-id', placeId);
   
   // Create popup content
   const popupContent = `
@@ -468,7 +477,7 @@ function addPlaceMarker(place, type) {
       <p>${type === 'gas' ? 'Gas Station' : 'Attraction'}</p>
       ${type === 'attraction' ? 
         `<button class="px-2 py-1 mt-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 view-photos" 
-        data-name="${name}">View Photos</button>` : ''}
+        data-name="${name.replace(/"/g, '&quot;')}">View Photos</button>` : ''}
     </div>
   `;
   
@@ -481,6 +490,14 @@ function addPlaceMarker(place, type) {
     .setLngLat(coordinates)
     .setPopup(popup)
     .addTo(map);
+    
+  // Store the place data with the marker for easy access
+  marker.placeData = {
+    id: placeId,
+    name: name,
+    coordinates: coordinates,
+    distance: properties.distance
+  };
   
   // Add click handler for attractions to show images
   if (type === 'attraction') {
@@ -490,13 +507,14 @@ function addPlaceMarker(place, type) {
     });
     
     // When popup is open, attach event listener to the button
-    marker.getElement().addEventListener('click', () => {
+    popup.on('open', () => {
       setTimeout(() => {
         const button = document.querySelector('.view-photos');
         if (button) {
           button.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation(); // Stop event propagation
-            const name = e.target.getAttribute('data-name');
+            const name = button.getAttribute('data-name');
             fetchImagesByPlace(name);
           });
         }
@@ -529,35 +547,73 @@ function updateTripSummary(data) {
 
 // Update places list in the summary
 function updatePlacesList(places, type) {
-  const listElement = type === 'gas' ? 
-    document.getElementById('gas-stations-list') : 
-    document.getElementById('attractions-list');
+  // Get the appropriate container
+  const container = type === 'gas' ? document.getElementById('gas-stations-list') : document.getElementById('attractions-list');
   
-  listElement.innerHTML = '';
+  // Clear existing content
+  container.innerHTML = '';
   
-  if (places.length > 0) {
-    places.forEach(place => {
-      const properties = place.properties;
-      const placeName = properties.name || 'Unnamed';
-      
-      const placeElement = document.createElement('div');
-      placeElement.className = 'mb-2 p-2 bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors';
-      placeElement.innerHTML = `
-        <p class="font-medium">${placeName}</p>
-        <p class="text-xs text-gray-400">${type === 'gas' ? 'Gas Station' : 'Attraction'}</p>
-      `;
-      
-      // Add click handler for attractions to view photos
-      if (type === 'attraction' && placeName !== 'Unnamed') {
-        placeElement.addEventListener('click', () => fetchImagesByPlace(placeName));
-        placeElement.title = 'Click to view photos';
-      }
-      
-      listElement.appendChild(placeElement);
-    });
-  } else {
-    listElement.innerHTML = `<p>No ${type === 'gas' ? 'gas stations' : 'attractions'} found along this route.</p>`;
+  // If no places found
+  if (!places || places.length === 0) {
+    container.innerHTML = `<p>No ${type === 'gas' ? 'gas stations' : 'attractions'} found along this route.</p>`;
+    return;
   }
+  
+  // Store in window object for chatbot access
+  if (type === 'gas') {
+    window.gasStationsList = places;
+  } else {
+    window.attractionsList = places;
+  }
+  
+  // Add places to list
+  places.forEach(place => {
+    const placeElement = document.createElement('div');
+    placeElement.classList.add('mb-2', 'pb-2', 'border-b', 'border-gray-600');
+    
+    // Create clickable name that will show the place on map
+    const nameElement = document.createElement('div');
+    nameElement.classList.add('font-medium', 'cursor-pointer', 'hover:text-green-400');
+    nameElement.textContent = place.name || 'Unnamed Place';
+    
+    // Add click event to highlight marker on map
+    nameElement.addEventListener('click', () => {
+      // Find marker and trigger animation
+      const marker = type === 'gas' ? gasMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id) :
+                                     attractionMarkers.find(m => m.getElement().getAttribute('data-place-id') === place.id);
+      
+      if (marker) {
+        // Pan map to marker
+        map.flyTo({
+          center: marker.getLngLat(),
+          zoom: 15,
+          speed: 1.5
+        });
+        
+        // Add bounce animation
+        const element = marker.getElement();
+        element.classList.add('bounce-animation');
+        setTimeout(() => element.classList.remove('bounce-animation'), 600);
+        
+        // If it's an attraction, also load images
+        if (type === 'attraction') {
+          fetchImagesByPlace(place.name || 'Attraction');
+        }
+      }
+    });
+    
+    placeElement.appendChild(nameElement);
+    
+    // Add distance from route if available
+    if (place.distance) {
+      const distanceElement = document.createElement('div');
+      distanceElement.classList.add('text-xs', 'text-gray-400');
+      distanceElement.textContent = `${(place.distance / 1000).toFixed(1)} km from route`;
+      placeElement.appendChild(distanceElement);
+    }
+    
+    container.appendChild(placeElement);
+  });
 }
 
 // Fetch images for attractions
@@ -584,25 +640,25 @@ function fetchImagesByPlace(placeName) {
   galleryTitle.textContent = `Loading images for: ${placeName}...`;
   document.getElementById('image-gallery').classList.add('active');
   
-  // First try Unsplash API if key is provided
-  if (UNSPLASH_ACCESS_KEY && UNSPLASH_ACCESS_KEY !== 'YOUR_UNSPLASH_API_KEY') {
-    fetchUnsplashImages(placeName);
-  } else {
-    // Fallback to Flickr API
-    fetchFlickrImages(placeName);
-  }
+  // First try Unsplash API
+  fetchUnsplashImages(placeName);
 }
 
 // Fetch images from Unsplash
 function fetchUnsplashImages(placeName) {
+  console.log("Fetching Unsplash images for:", placeName);
   const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(placeName)}&per_page=10&client_id=${UNSPLASH_ACCESS_KEY}`;
   
   fetch(unsplashUrl)
     .then(response => {
-      if (!response.ok) throw new Error('Failed to fetch images from Unsplash');
+      if (!response.ok) {
+        console.error('Unsplash API error:', response.status);
+        throw new Error('Failed to fetch images from Unsplash');
+      }
       return response.json();
     })
     .then(data => {
+      console.log("Unsplash API response:", data);
       if (data.results && data.results.length > 0) {
         // Build image URLs
         galleryImages = data.results.map(photo => ({
@@ -614,6 +670,7 @@ function fetchUnsplashImages(placeName) {
         showImage(0);
         document.getElementById('gallery-title').textContent = placeName;
       } else {
+        console.log("No Unsplash results, falling back to Flickr");
         // Fallback to Flickr if no results
         fetchFlickrImages(placeName);
       }
